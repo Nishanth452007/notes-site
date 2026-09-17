@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notes Register</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="wrap">
+  <aside class="sidebar">
+    <div class="masthead">
+      <div class="mark">PERSONAL REGISTER</div>
+      <h1>Notes</h1>
+    </div>
+
+    <div class="search-box">
+      <input id="search" type="text" placeholder="Search notes…">
+    </div>
+
+    <nav class="subject-list" id="subjectList"></nav>
+
+    <div class="sidebar-foot">
+      <div class="theme-toggle" id="themeToggle">
+        <button data-theme="light">LIGHT</button>
+        <button data-theme="dark">DARK BLUE</button>
+      </div>
+      <a class="admin-link" href="admin.html">Admin editor →</a>
+    </div>
+  </aside>
+
+  <main class="main" id="main"></main>
+</div>
+
+<script src="notes-data.js"></script>
+<script>
+const state = { subject: "all", query: "", noteId: null };
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function formatContent(raw) {
+  return raw.split(/\n\s*\n/).map(para => {
+    let p = escapeHtml(para.trim())
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/\n/g, '<br>');
+    return `<p>${p}</p>`;
+  }).join('');
+}
+
+function subjectLabel(id) {
+  const s = SITE_DATA.subjects.find(s => s.id === id);
+  return s ? s.label : id;
+}
+function subjectAccent(id) {
+  const s = SITE_DATA.subjects.find(s => s.id === id);
+  return s ? s.accent : 'gold';
+}
+
+function renderSidebar() {
+  const list = document.getElementById('subjectList');
+  const counts = {};
+  SITE_DATA.notes.forEach(n => counts[n.subject] = (counts[n.subject] || 0) + 1);
+
+  let html = `<button class="subject-item ${state.subject==='all'?'active':''}" data-id="all">
+    <span><span class="dot" style="background:var(--ink-soft)"></span>All notes</span>
+    <span class="count">${SITE_DATA.notes.length}</span>
+  </button>`;
+
+  SITE_DATA.subjects.forEach(s => {
+    html += `<button class="subject-item ${state.subject===s.id?'active':''}" data-accent="${s.accent}" data-id="${s.id}">
+      <span><span class="dot"></span>${escapeHtml(s.label)}</span>
+      <span class="count">${counts[s.id] || 0}</span>
+    </button>`;
+  });
+
+  list.innerHTML = html;
+  list.querySelectorAll('.subject-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.subject = btn.dataset.id;
+      state.noteId = null;
+      render();
+    });
+  });
+}
+
+function filteredNotes() {
+  return SITE_DATA.notes
+    .filter(n => state.subject === 'all' || n.subject === state.subject)
+    .filter(n => {
+      if (!state.query) return true;
+      const q = state.query.toLowerCase();
+      return n.title.toLowerCase().includes(q) ||
+             n.content.toLowerCase().includes(q) ||
+             (n.tags || []).some(t => t.toLowerCase().includes(q));
+    })
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+}
+
+function renderList() {
+  const main = document.getElementById('main');
+  const notes = filteredNotes();
+  const heading = state.subject === 'all' ? 'All notes' : subjectLabel(state.subject);
+
+  let html = `<div class="main-head"><h2>${escapeHtml(heading)}</h2><span class="subcount">${notes.length} ${notes.length===1?'entry':'entries'}</span></div>`;
+
+  if (notes.length === 0) {
+    html += `<div class="empty-state">Nothing here yet. Add notes from the <a href="admin.html">admin editor</a>, or edit <code>notes-data.js</code> directly and commit it.</div>`;
+  } else {
+    notes.forEach((n, i) => {
+      const excerpt = n.content.replace(/\*\*|\*/g, '').split(/\n\s*\n/)[0].slice(0, 160);
+      html += `<article class="entry" data-id="${n.id}">
+        <div class="entry-num">${String(notes.length - i).padStart(3, '0')} — ${subjectLabel(n.subject)} — ${n.date}</div>
+        <h3>${escapeHtml(n.title)}</h3>
+        <div class="meta">${(n.tags||[]).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>
+        <div class="excerpt">${escapeHtml(excerpt)}${n.content.length > 160 ? '…' : ''}</div>
+      </article>`;
+    });
+  }
+
+  main.innerHTML = html;
+  main.querySelectorAll('.entry').forEach(el => {
+    el.addEventListener('click', () => {
+      state.noteId = Number(el.dataset.id);
+      render();
+      window.scrollTo(0,0);
+    });
+  });
+}
+
+function renderNote() {
+  const main = document.getElementById('main');
+  const note = SITE_DATA.notes.find(n => n.id === state.noteId);
+  if (!note) { state.noteId = null; return renderList(); }
+
+  main.innerHTML = `
+    <span class="back-link" id="backBtn">← Back to ${escapeHtml(subjectLabel(note.subject))}</span>
+    <div class="note-view">
+      <div class="entry-num">${subjectLabel(note.subject)} — ${note.date}</div>
+      <h2 class="title">${escapeHtml(note.title)}</h2>
+      <div class="meta">${(note.tags||[]).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>
+      <div class="content">${formatContent(note.content)}</div>
+    </div>`;
+  document.getElementById('backBtn').addEventListener('click', () => {
+    state.noteId = null; render();
+  });
+}
+
+function render() {
+  renderSidebar();
+  if (state.noteId) renderNote(); else renderList();
+}
+
+document.getElementById('search').addEventListener('input', e => {
+  state.query = e.target.value;
+  state.noteId = null;
+  render();
+});
+
+// Theme handling
+function setTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('notes-theme', theme);
+  document.querySelectorAll('#themeToggle button').forEach(b => {
+    b.classList.toggle('active', b.dataset.theme === theme);
+  });
+}
+document.getElementById('themeToggle').addEventListener('click', e => {
+  if (e.target.dataset.theme) setTheme(e.target.dataset.theme);
+});
+setTheme(localStorage.getItem('notes-theme') || 'light');
+
+render();
+</script>
+</body>
+</html>

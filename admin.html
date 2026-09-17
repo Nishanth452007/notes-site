@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Notes Register</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="admin-shell" id="app"></div>
+
+<script src="notes-data.js"></script>
+<script>
+/*
+  How this works:
+  This page does NOT save anything to the internet by itself — it's a
+  plain HTML page with no server. It reads the current notes-data.js
+  (already loaded above), lets you add a note or subject in a form,
+  and then gives you the FULL updated file to copy and commit to your
+  GitHub repo. That commit is the actual "save" step — and because
+  only you can push to your repo, that's also your real admin control.
+  The password below just keeps casual visitors with your link from
+  poking at this page; it is not real security.
+*/
+
+const ADMIN_PASSWORD = "changeme123"; // <-- change this, then commit
+
+const app = document.getElementById('app');
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderLogin() {
+  document.documentElement.setAttribute('data-theme', localStorage.getItem('notes-theme') || 'light');
+  app.innerHTML = `
+    <div class="masthead" style="margin-bottom:28px;">
+      <div class="mark">ADMIN</div>
+      <h1 style="font-family:'Source Serif 4',serif;">Notes editor</h1>
+    </div>
+    <div class="field">
+      <label>PASSWORD</label>
+      <input type="password" id="pw" placeholder="Enter admin password">
+    </div>
+    <button class="btn" id="loginBtn">Enter</button>
+    <p id="err" style="color:var(--maroon); font-size:13px; margin-top:10px;"></p>
+    <p style="font-size:12px; color:var(--ink-soft); margin-top:24px;">
+      Note: this is a soft gate for a public link, not real security.
+      Your actual admin control is that only you can push commits to
+      the GitHub repo. Don't put anything truly private in your notes.
+    </p>`;
+  document.getElementById('loginBtn').addEventListener('click', tryLogin);
+  document.getElementById('pw').addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin(); });
+}
+
+function tryLogin() {
+  const val = document.getElementById('pw').value;
+  if (val === ADMIN_PASSWORD) {
+    sessionStorage.setItem('notes-admin-ok', '1');
+    renderEditor();
+  } else {
+    document.getElementById('err').textContent = 'Incorrect password.';
+  }
+}
+
+// Working copy of data for this session
+let subjects = JSON.parse(JSON.stringify(SITE_DATA.subjects));
+let notes = JSON.parse(JSON.stringify(SITE_DATA.notes));
+
+function nextId() {
+  return notes.length ? Math.max(...notes.map(n => n.id)) + 1 : 1;
+}
+
+function subjectOptions(selected) {
+  return subjects.map(s => `<option value="${s.id}" ${s.id===selected?'selected':''}>${escapeHtml(s.label)}</option>`).join('');
+}
+
+function renderEditor() {
+  app.innerHTML = `
+    <div class="masthead" style="margin-bottom:8px;">
+      <div class="mark">ADMIN</div>
+      <h1 style="font-family:'Source Serif 4',serif;">Notes editor</h1>
+    </div>
+    <p style="font-size:13px; color:var(--ink-soft); margin-bottom:28px;">
+      Fill in a note below, or add a new subject, then generate the
+      updated file at the bottom and commit it to GitHub.
+    </p>
+
+    <h3 style="font-family:'Source Serif 4',serif; margin-bottom:12px;">Add a subject</h3>
+    <div style="display:flex; gap:10px; margin-bottom:30px; align-items:flex-end;">
+      <div class="field" style="flex:1; margin-bottom:0;">
+        <label>SUBJECT NAME</label>
+        <input type="text" id="newSubject" placeholder="e.g. Polity">
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label>ACCENT</label>
+        <select id="newSubjectAccent">
+          <option value="gold">Gold</option>
+          <option value="teal">Teal</option>
+          <option value="maroon">Maroon</option>
+        </select>
+      </div>
+      <button class="btn secondary" id="addSubjectBtn">Add</button>
+    </div>
+    <div id="subjectPreview" style="font-size:12px; color:var(--ink-soft); margin-bottom:34px;"></div>
+
+    <h3 style="font-family:'Source Serif 4',serif; margin-bottom:12px;">Add a note</h3>
+    <div class="field">
+      <label>SUBJECT</label>
+      <select id="noteSubject">${subjectOptions()}</select>
+    </div>
+    <div class="field">
+      <label>TITLE</label>
+      <input type="text" id="noteTitle" placeholder="e.g. The Non-Cooperation Movement">
+    </div>
+    <div class="field">
+      <label>DATE</label>
+      <input type="date" id="noteDate" value="${new Date().toISOString().slice(0,10)}">
+    </div>
+    <div class="field">
+      <label>TAGS (comma separated, optional)</label>
+      <input type="text" id="noteTags" placeholder="e.g. modern history, gandhi">
+    </div>
+    <div class="field">
+      <label>CONTENT — separate paragraphs with a blank line. **bold** and *italic* supported.</label>
+      <textarea id="noteContent" placeholder="Write your note here…"></textarea>
+    </div>
+    <button class="btn" id="addNoteBtn">Add note to this session</button>
+
+    <h3 style="font-family:'Source Serif 4',serif; margin:36px 0 10px;">Notes in this session</h3>
+    <div id="sessionList" style="font-size:13px; color:var(--ink-soft); margin-bottom:18px;"></div>
+
+    <h3 style="font-family:'Source Serif 4',serif; margin-bottom:10px;">Updated file</h3>
+    <p style="font-size:13px; color:var(--ink-soft); margin-bottom:14px;">
+      Copy this and replace the entire contents of <code>notes-data.js</code>
+      in your GitHub repo (or use the download button), then commit.
+    </p>
+    <div style="display:flex; gap:10px; margin-bottom:14px;">
+      <button class="btn secondary" id="generateBtn">Generate file</button>
+      <button class="btn secondary" id="downloadBtn">Download notes-data.js</button>
+      <button class="btn secondary" id="copyBtn">Copy to clipboard</button>
+    </div>
+    <div class="code-out" id="codeOut">Click "Generate file" once you've added your notes above.</div>
+  `;
+
+  document.getElementById('addSubjectBtn').addEventListener('click', () => {
+    const name = document.getElementById('newSubject').value.trim();
+    const accent = document.getElementById('newSubjectAccent').value;
+    if (!name) return;
+    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    if (subjects.some(s => s.id === id)) { alert('That subject already exists.'); return; }
+    subjects.push({ id, label: name, accent });
+    document.getElementById('newSubject').value = '';
+    refreshPreview();
+  });
+
+  document.getElementById('addNoteBtn').addEventListener('click', () => {
+    const subject = document.getElementById('noteSubject').value;
+    const title = document.getElementById('noteTitle').value.trim();
+    const date = document.getElementById('noteDate').value;
+    const tags = document.getElementById('noteTags').value.split(',').map(t => t.trim()).filter(Boolean);
+    const content = document.getElementById('noteContent').value.trim();
+    if (!title || !content) { alert('Title and content are required.'); return; }
+    notes.push({ id: nextId(), subject, title, date, tags, content });
+    document.getElementById('noteTitle').value = '';
+    document.getElementById('noteTags').value = '';
+    document.getElementById('noteContent').value = '';
+    refreshPreview();
+  });
+
+  document.getElementById('generateBtn').addEventListener('click', () => {
+    document.getElementById('codeOut').textContent = buildFileText();
+  });
+  document.getElementById('downloadBtn').addEventListener('click', () => {
+    const blob = new Blob([buildFileText()], { type: 'text/javascript' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'notes-data.js';
+    a.click();
+  });
+  document.getElementById('copyBtn').addEventListener('click', () => {
+    navigator.clipboard.writeText(buildFileText());
+    alert('Copied. Paste it into notes-data.js on GitHub and commit.');
+  });
+
+  refreshPreview();
+}
+
+function refreshPreview() {
+  document.getElementById('noteSubject').innerHTML = subjectOptions();
+  document.getElementById('subjectPreview').textContent =
+    'Subjects: ' + subjects.map(s => s.label).join(', ');
+  document.getElementById('sessionList').textContent =
+    notes.length ? notes.map(n => `• ${n.title} (${n.subject})`).join('\n') : 'No notes added yet.';
+}
+
+function jsString(str) {
+  return '`' + String(str).replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${') + '`';
+}
+
+function buildFileText() {
+  const subjLines = subjects.map(s =>
+    `    { id: ${JSON.stringify(s.id)}, label: ${JSON.stringify(s.label)}, accent: ${JSON.stringify(s.accent)} }`
+  ).join(',\n');
+
+  const noteLines = notes.map(n => `    {
+      id: ${n.id},
+      subject: ${JSON.stringify(n.subject)},
+      title: ${JSON.stringify(n.title)},
+      date: ${JSON.stringify(n.date)},
+      tags: ${JSON.stringify(n.tags || [])},
+      content: ${jsString(n.content)}
+    }`).join(',\n');
+
+  return `const SITE_DATA = {
+  subjects: [
+${subjLines}
+  ],
+
+  notes: [
+${noteLines}
+  ]
+};
+`;
+}
+
+if (sessionStorage.getItem('notes-admin-ok') === '1') {
+  renderEditor();
+} else {
+  renderLogin();
+}
+</script>
+</body>
+</html>
